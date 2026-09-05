@@ -46,6 +46,7 @@ Poner en marcha una pila de navegación y mapeo en **ROS2**, controlando un robo
 | `ros2.yaml` | Configuración (map_server) | Metadatos del mapa: imagen, resolución, origen, umbrales de ocupación (`map_server` de ROS2). |
 | `rosgraph.svg` | Diagrama vectorial | **Grafo de cómputo** ROS2 (nodos y tópicos) exportado desde `rqt_graph`. |
 | `evidencia.gif` | Imagen animada | **Evidencia de funcionamiento**: captura en movimiento del robot simulando/mapeando el entorno. |
+| `nav2_commander.py` | Script Python (ROS2) | **Cliente de navegación (Nav2)**: envía objetivos `NavigateToPose` al robot para que navegue a coordenadas dadas del mapa. |
 | `README.md` | Documentación | Documento actual (esta estructura). |
 
 ### Detalle del mapa (`ros2.yaml`)
@@ -77,6 +78,11 @@ free_thresh: 0.196          # <19.6% probabilidad de libre
                                        ros2.pgm + ros2.yaml
                                                 │
                                         visualización (GViz)
+
+[topic /navigate_to_pose (acción Nav2)]
+        ▲
+        │  objetivo de navegación
+   nav2_commander.py  ────►  [Servidor Nav2] ────► robot en movimiento
 ```
 
 Flujo de la actividad:
@@ -85,6 +91,7 @@ Flujo de la actividad:
 3. El mapa construido se **exporta** a `ros2.pgm` (imagen de ocupación) junto con su `ros2.yaml` (metadatos resolutivos).
 4. El **grafo de nodos** (`rosgraph.svg`) documenta cómo se comunican los nodos y tópicos del sistema.
 5. Se captura **`evidencia.gif`** mostrando el funcionamiento del robot en el entorno.
+6. Con **`nav2_commander.py`** se envían objetivos de navegación al servidor Nav2 (`navigate_to_pose`) para que el robot se desplace a las coordenadas indicadas.
 
 ---
 
@@ -110,6 +117,33 @@ free_thresh: 0.196     # umbral de libre
 - **Mapa → server**: `ros2 run nav2_map_server map_server --ros-args -p yaml_filename:=ros2.yaml` para servir el mapa construido.
 - **Grafo**: abrir `rqt_graph` para visualizar y exportar las conexiones entre nodos/ópicos (`rosgraph.svg`).
 
+### Navegación con `nav2_commander.py`
+Script Python que actúa como **cliente de la acción `NavigateToPose`** de Nav2:
+
+```python
+# nav2_commander.py (resumen)
+from nav2_msgs.action import NavigateToPose
+
+class Nav2Commander(Node):
+    def __init__(self):
+        super().__init__('nav2_commander_node')
+        self._action_client = ActionClient(self, NavigateToPose, 'navigate_to_pose')
+
+    def send_goal(self, x, y, theta_z, theta_w):
+        self._action_client.wait_for_server()
+        # Construye el Goal: frame 'map', posición (x, y) y orientación (cuaternión)
+        self._action_client.send_goal_async(goal_msg)
+```
+
+- Dependencias: `rclpy`, `nav2_msgs` (acción `NavigateToPose`) y `geometry_msgs` (`PoseStamped`).
+- El **goal** se construye en el frame `map` con posición `(x, y)` y orientación expresada como **cuaternión** (`z`, `w`).
+- El envío es **asíncrono** (`send_goal_async`); se verifica si Nav2 **acepta** el objetivo y luego se espera el resultado.
+- Cambia el destino en `main()`:
+  ```python
+  nav_commander.send_goal(1.5, 0.5, 0.0, 1.0)   # X, Y, orientación Z, W
+  ```
+- Al finalizar la navegación se imprime el código de estado y se cierra el nodo (`rclpy.shutdown()`).
+
 > Nota: este repositorio conserva **resultados/evidencias** de la actividad. Los scripts de lanzamiento y los paquetes ROS2 no se encuentran versionados aquí; se recomienda incluirlos en futuras iteraciones.
 
 ---
@@ -121,6 +155,7 @@ free_thresh: 0.196     # umbral de libre
 | Mapa de ocupación | `ros2.pgm` + `ros2.yaml` | Que el SLAM construyó un mapa coherente del entorno (resolución 5 cm, dimensión acorde al origen `[-9.7, -5.5]`). |
 | Grafo de comunicación | `rosgraph.svg` | Que los nodos y tópicos de la pila están activos y bien conectados. |
 | Funcionamiento en movimiento | `evidencia.gif` | Captura animada del robot navegando/mapeando el entorno en simulación. |
+| Envío de objetivos Nav2 | `nav2_commander.py` | Envía coordenadas al servidor `navigate_to_pose`; se confirma que el robot acepta el objetivo y navega (estado final reportado por la acción). |
 
 - Se verificó que las celdas del `.pgm` presentan zonas **libres**, **ocupadas** y **desconocidas** (modo `trinary`), coherentes con un entorno mapeado.
 - Los umbrales (`occupied_thresh` 0.65 / `free_thresh` 0.196) son compatibles con parámetros típicos de `map_server` en ROS2.
